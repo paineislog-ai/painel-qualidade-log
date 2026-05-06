@@ -162,6 +162,15 @@ def business_days_count(dini: date, dfim: date) -> int:
         return 0
     return len(pd.bdate_range(dini, dfim))
 
+def _safe_pct(numerador, denominador):
+    """Calcula percentual sem quebrar quando o denominador é zero.
+    Importante: np.where avalia a divisão antes de escolher a condição,
+    então precisamos substituir 0 por NaN antes da divisão.
+    """
+    num = pd.to_numeric(numerador, errors="coerce")
+    den = pd.to_numeric(denominador, errors="coerce").replace(0, np.nan)
+    return (num / den) * 100
+
 
 # ------------------ LEITURA DOS ÍNDICES (com cache) ------------------
 @st.cache_data(ttl=300, show_spinner=False)
@@ -803,11 +812,11 @@ if "UNIDADE" in viewQ.columns:
                 prod_city = pd.DataFrame(columns=["UNIDADE", "VIST"])
 
             by_city = by_city.merge(prod_city, on="UNIDADE", how="left").fillna({"VIST": 0})
-            by_city["%ERRO"] = np.where(by_city["VIST"] > 0, (by_city["QTD"] / by_city["VIST"]) * 100, np.nan)
+            by_city["%ERRO"] = _safe_pct(by_city["QTD"], by_city["VIST"])
 
             if by_city["%ERRO"].isna().all():
                 total_err = by_city["QTD"].sum()
-                by_city["%ERRO"] = np.where(total_err > 0, (by_city["QTD"] / total_err) * 100, np.nan)
+                by_city["%ERRO"] = _safe_pct(by_city["QTD"], total_err)
                 y2_title = "% dos erros"
             else:
                 y2_title = "% de erro (erros/vistorias)"
@@ -865,12 +874,10 @@ if "UNIDADE" in viewQ.columns:
 
             by_city_gg = by_city_gg.merge(prod_city, on="UNIDADE", how="left").fillna({"VIST": 0})
 
-            by_city_gg["%ERRO_GG"] = np.where(by_city_gg["VIST"] > 0,
-                                              (by_city_gg["QTD_GG"] / by_city_gg["VIST"]) * 100, np.nan)
+            by_city_gg["%ERRO_GG"] = _safe_pct(by_city_gg["QTD_GG"], by_city_gg["VIST"])
             if by_city_gg["%ERRO_GG"].isna().all():
                 total_gg_global = by_city_gg["QTD_GG"].sum()
-                by_city_gg["%ERRO_GG"] = np.where(total_gg_global > 0,
-                                                  (by_city_gg["QTD_GG"] / total_gg_global) * 100, np.nan)
+                by_city_gg["%ERRO_GG"] = _safe_pct(by_city_gg["QTD_GG"], total_gg_global)
                 y2_title_gg = "% dos erros GG"
             else:
                 y2_title_gg = "% de erro GG (GG/vistorias)"
@@ -1107,7 +1114,7 @@ if not fast_mode:
                 on="UNIDADE",
                 how="left",
             )
-            hm["%_VIST"] = np.where(hm["DEN"] > 0, (hm["QTD"] / hm["DEN"]) * 100, np.nan)
+            hm["%_VIST"] = _safe_pct(hm["QTD"], hm["DEN"])
             hm["%_VIST_TXT"] = hm["%_VIST"].map(lambda x: "—" if pd.isna(x) else f"{x:.1f}%".replace(".", ","))
 
             rects = alt.Chart(hm).mark_rect().encode(
@@ -1503,7 +1510,7 @@ prev = (prev_base.groupby("VISTORIADOR", dropna=False)["ERRO"].size().reset_inde
 
 tab = cur.merge(prev, on="VISTORIADOR", how="outer").fillna(0)
 tab["Δ"] = tab["ERROS_ATUAL"] - tab["ERROS_ANT"]
-tab["VAR_%"] = np.where(tab["ERROS_ANT"] > 0, (tab["Δ"] / tab["ERROS_ANT"]) * 100, np.nan)
+tab["VAR_%"] = _safe_pct(tab["Δ"], tab["ERROS_ANT"])
 
 def _status(delta):
     if delta < 0: return "✅ Melhorou"
