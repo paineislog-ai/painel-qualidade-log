@@ -164,11 +164,18 @@ def business_days_count(dini: date, dfim: date) -> int:
 
 def _safe_pct(numerador, denominador):
     """Calcula percentual sem quebrar quando o denominador é zero.
-    Importante: np.where avalia a divisão antes de escolher a condição,
-    então precisamos substituir 0 por NaN antes da divisão.
+    Aceita Series, listas, arrays e valores únicos.
     """
     num = pd.to_numeric(numerador, errors="coerce")
-    den = pd.to_numeric(denominador, errors="coerce").replace(0, np.nan)
+
+    # Quando o denominador é um valor único, pd.to_numeric devolve int/float,
+    # e int/float não possui .replace(). Por isso tratamos separado.
+    if np.isscalar(denominador):
+        den = np.nan if pd.isna(denominador) or float(denominador) == 0 else float(denominador)
+        return (num / den) * 100
+
+    den = pd.to_numeric(denominador, errors="coerce")
+    den = pd.Series(den, index=getattr(numerador, "index", None)).replace(0, np.nan)
     return (num / den) * 100
 
 
